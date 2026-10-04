@@ -26,6 +26,8 @@ class BaseSearchCustomizer(ABC):
         self.company_blacklist = []
         self.title_blacklist = []
         self.location_blacklist = []
+        self.search_passes = []
+        self._full_parameters = {}
 
     def set_advanced_search_params(self, parameters: Dict[str, Any]) -> None:
         """Set search parameters from config"""
@@ -42,7 +44,33 @@ class BaseSearchCustomizer(ABC):
         self.company_blacklist = parameters.get("company_blacklist") or []
         self.title_blacklist = parameters.get("title_blacklist") or []
         self.location_blacklist = parameters.get("location_blacklist") or []
+        self.search_passes = parameters.get("search_passes") or []
+        self._full_parameters = dict(parameters)
         logger.info(f"{self.__class__.__name__} parameters successfully set")
+
+    def activate_pass(self, pass_cfg: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply one search-pass configuration and return the merged parameters."""
+        if not isinstance(pass_cfg, dict):
+            return dict(self._full_parameters)
+
+        location = pass_cfg.get("location")
+        if location is None:
+            location = pass_cfg.get("locations")
+        if isinstance(location, str):
+            self.locations = [location]
+        elif isinstance(location, list):
+            self.locations = [str(item) for item in location if item]
+
+        self.remote = bool(pass_cfg.get("remote", False))
+        self.hybrid = bool(pass_cfg.get("hybrid", False))
+        self.onsite = bool(pass_cfg.get("onsite", False))
+
+        merged = dict(self._full_parameters)
+        merged["locations"] = self.locations
+        merged["remote"] = self.remote
+        merged["hybrid"] = self.hybrid
+        merged["onsite"] = self.onsite
+        return merged
 
     def is_job_blacklisted(self, job_title: str, company_name: str, job_location: str) -> bool:
         """Return True if this job should be skipped based on blacklists"""

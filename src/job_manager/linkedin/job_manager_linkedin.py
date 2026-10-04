@@ -197,9 +197,39 @@ class LinkedInJobManager(BaseJobManager):
             self.cache.last_run = (last_run + timedelta(hours=24)).isoformat()
         else:
             self.cache.update_last_run()
-        result = ""
         # write recommendations for improving the resume
         self.resume_improvement_recommendations()
+
+        search_passes = self.search_component.search_passes or [None]
+        result = ""
+        for pass_index, pass_cfg in enumerate(search_passes):
+            if pass_cfg:
+                pass_parameters = self.search_component.activate_pass(pass_cfg)
+                if self.llm_answerer_component is not None and pass_parameters:
+                    self.llm_answerer_component.set_search_parameters(pass_parameters)
+                await self.search_component.set_search_params()
+                self.page_num = 0
+                logger.info(
+                    f"Search pass {pass_index + 1}/{len(search_passes)}: "
+                    f"locations={self.search_component.locations} "
+                    f"remote={self.search_component.remote} "
+                    f"hybrid={self.search_component.hybrid} "
+                    f"onsite={self.search_component.onsite}"
+                )
+
+            result = await self._apply_single_search()
+
+            # stop starting new passes once a limit/error/shutdown has been reached
+            if result in ("Limit", "Error", "Shutdown"):
+                break
+
+        logger.info(f"Applications sent: {self.success_applies_num}")
+        logger.info("Ending the work.")
+        await self.send_report(result)
+
+    async def _apply_single_search(self) -> str:
+        """Apply to all jobs on all pages of the currently configured search (async)."""
+        result = ""
         seen_page_signatures = set()
         # continue until the maximum number of applications is reached
         while self.success_applies_num < self.max_applies_num and self.applies_num < 400:
@@ -265,9 +295,7 @@ class LinkedInJobManager(BaseJobManager):
             if not await self._go_to_next_page():
                 logger.info("No further result pages available")
                 break
-        logger.info(f"Applications sent: {self.success_applies_num}")
-        logger.info("Ending the work.")
-        await self.send_report(result)
+        return result
 
     async def apply_job(self, vacancy: Dict[str, Any]) -> str:
         """Send applications to all employers on the page (async)"""

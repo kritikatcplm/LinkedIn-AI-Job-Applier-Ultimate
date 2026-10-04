@@ -52,6 +52,7 @@ class BaseJobManager(ABC):
     def set_parameters(self, parameters: Dict[str, Any]):
         """Setting job manager parameters"""
         logger.info("Setting job manager parameters")
+        self.parameters = parameters
         self.max_applies_num = MAX_APPLIES_NUM
         self.apply_once_at_company = parameters.get("apply_once_at_company", True)
         company_blacklist = parameters.get("company_blacklist") or []

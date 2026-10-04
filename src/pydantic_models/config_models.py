@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
@@ -68,6 +68,10 @@ class SearchConfig(BaseModel):
 
     # Location settings
     locations: Optional[List[str]] = []
+
+    # Optional list of search passes. Each pass may define its own
+    # `location`/`locations` and `remote`/`hybrid`/`onsite` work arrangement.
+    search_passes: Optional[List[Dict[str, Any]]] = []
 
     # Application settings
     apply_once_at_company: Optional[bool] = True
