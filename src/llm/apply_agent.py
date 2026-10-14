@@ -11,7 +11,7 @@ from config.constants import CUSTOM_COST_PER_TOKEN, LOG_DIR, RESUME_DIR, cost_pe
 from config.logger_config import logger
 from src.dashboard.runtime import emit_event
 from src.pydantic_models.log_models import LLMCall
-from src.utils.utils import append_yaml_file, get_ready_made_resume
+from src.utils.utils import append_yaml_file, get_ready_made_resume, get_ready_made_resume_for_job
 
 
 class ApplyAgent:
@@ -112,9 +112,12 @@ class ApplyAgent:
         """Add resume for analysis."""
         self.resume_readable = resume_readable
 
-    async def apply(self, job_url: str) -> None:
+    async def apply(self, job_url: str, job_description: str | None = None) -> None:
         """Apply to the job using AI Agent"""
-        resume_pdf_path = str(get_ready_made_resume())
+        ready_made_resume = get_ready_made_resume() or get_ready_made_resume_for_job(
+            job_description or ""
+        )
+        resume_pdf_path = str(ready_made_resume)
         emit_event("agent_apply_started", "External apply agent started", url=job_url)
 
         tools = Tools()
@@ -247,11 +250,13 @@ class ApplyAgent:
 
         return total_cost
 
-    async def apply_to_job(self, job_url: str) -> tuple[str, str]:
+    async def apply_to_job(
+        self, job_url: str, job_description: str | None = None
+    ) -> tuple[str, str]:
         """Apply to job, handling event loop properly"""
         # Directly await the apply method since we're already in an async context
         try:
-            await self.apply(job_url)
+            await self.apply(job_url, job_description)
             return ("Success", "")
         except Exception as e:
             logger.error(f"Error applying to job: {e}")

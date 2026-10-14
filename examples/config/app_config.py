@@ -57,6 +57,20 @@ WARNING: applying to the jobs with 3rd party applications is not guaranteed to b
 EASY_APPLY_ONLY_MODE = True
 
 """
+When enabled, automatically select only SAP Materials Management-related roles
+for application, bypassing the general LLM/monkey-mode interest decision.
+Existing blacklists, duplicate checks, application limits, and apply-method settings still apply.
+"""
+SAP_MM_AUTO_APPLY_MODE = False
+
+"""
+External ATS hosts the bot refuses to auto-apply to, matched as URL substrings.
+These platforms are known to break the company-site apply agent (stale element
+indices cause endless retry loops). Remove an entry to attempt that platform.
+"""
+EXTERNAL_APPLY_SKIP_ATSES = ["phenom", "successfactors"]
+
+"""
 If enabled for LinkedIn, ignores positions in search_config.yaml and processes
 LinkedIn's recommended jobs list instead of a keyword search.
 """
@@ -80,6 +94,17 @@ If set - the file at this path is used as-is for every application.
 Example: data/resumes/resume.pdf
 """
 READY_MADE_RESUME_PATH = ""
+"""
+Ready-made resume PDFs selected by the language of the job advertisement.
+Keys are lowercase language names ("english", "german", ...); values are paths to
+resume PDFs. When a vacancy's advertisement is detected to be in one of the listed
+languages, that file is uploaded as-is instead of generating a tailored resume.
+Languages that are not listed (or could not be detected) still get a generated resume.
+Ignored for any language when READY_MADE_RESUME_PATH is set, since that path is used
+for every application.
+Example: {"german": "resume_de.pdf"}
+"""
+READY_MADE_RESUME_BY_LANGUAGE = {}
 """
 Optional path to a photo file for LinkedIn Easy Apply image upload fields.
 If empty string - the bot will try to reuse your visible LinkedIn profile photo.

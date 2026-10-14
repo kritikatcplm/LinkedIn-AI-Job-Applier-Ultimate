@@ -12,6 +12,7 @@ from config.app_config import (
     MAX_APPLIES_NUM,
     MINIMUM_WAIT_TIME_SEC,
     MONKEY_MODE,
+    SAP_MM_AUTO_APPLY_MODE,
     TEST_MODE,
 )
 from config.constants import COVER_LETTER_DIR, OUTPUT_DIR_INDEED, RESUME_DIR, SEARCH_CONFIG_FILE
@@ -257,7 +258,15 @@ class IndeedJobManager(BaseJobManager):
             job.job_description = await self._extract_job_description_from_page(new_page)
             job.company_description = await self._extract_company_description(new_page)
 
-            if MONKEY_MODE is True and COLLECT_INFO_MODE is False:
+            if SAP_MM_AUTO_APPLY_MODE and COLLECT_INFO_MODE is False:
+                job_is_interesting = self._is_sap_mm_related_job(job)
+                score = 100 if job_is_interesting else 0
+                reasoning = (
+                    "Matched SAP MM auto-apply filter"
+                    if job_is_interesting
+                    else "Did not match SAP MM auto-apply filter"
+                )
+            elif MONKEY_MODE is True and COLLECT_INFO_MODE is False:
                 job_is_interesting = True
                 score, reasoning = 0, "Monkey mode"
                 logger.info(
@@ -300,12 +309,16 @@ class IndeedJobManager(BaseJobManager):
             self.submitted_resume_path = None
 
             if not EASY_APPLY_ONLY_MODE and job.apply_method == "external":
+                evaluation["application_method"] = "company_site"
                 if TEST_MODE:
                     apply_result = "Skip", "Test mode"
                 else:
                     apply_url = await self._get_button_link(new_page)
-                    apply_result = await self.llm_agent_component.apply_to_job(apply_url)
+                    apply_result = await self.llm_agent_component.apply_to_job(
+                        apply_url, job.job_description
+                    )
             else:
+                evaluation["application_method"] = "indeed_easy_apply"
                 apply_result = await self.easy_apply(job, new_page)
 
             if self.submitted_resume_path:

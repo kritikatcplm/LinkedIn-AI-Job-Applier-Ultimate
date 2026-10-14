@@ -285,3 +285,81 @@ class TestCreateAndUploadResume:
 
         assert applier.resume_generator_manager.pdf_base64.call_count == 2
         mock_element.set_input_files.assert_called_once()
+
+
+class TestResolveReadyMadeResume:
+    """Tests for BaseEasyApplier.resolve_ready_made_resume"""
+
+    def test_prefers_unconditional_resume_path(self, applier, tmp_path):
+        unconditional = tmp_path / "always.pdf"
+        unconditional.write_bytes(b"%PDF-1.4")
+        applier.ready_made_resume_path = unconditional
+
+        job = Job(job_title="Engineer", company_name="Tech", job_description="short ad")
+
+        with patch(
+            "src.job_manager.easy_applier.get_ready_made_resume_for_job",
+            return_value=tmp_path / "never.pdf",
+        ) as mock_lookup:
+            assert applier.resolve_ready_made_resume(job) == unconditional
+        mock_lookup.assert_not_called()
+
+    def test_falls_back_to_language_matched_resume(self, applier, tmp_path):
+        language_resume = tmp_path / "resume_de.pdf"
+        language_resume.write_bytes(b"%PDF-1.4")
+        applier.ready_made_resume_path = None
+        job = Job(job_title="Engineer", company_name="Tech", job_description="long enough ad")
+
+        with patch(
+            "src.job_manager.easy_applier.get_ready_made_resume_for_job",
+            return_value=language_resume,
+        ) as mock_lookup:
+            assert applier.resolve_ready_made_resume(job) == language_resume
+        mock_lookup.assert_called_once_with("long enough ad")
+
+    def test_returns_none_when_nothing_is_configured(self, applier):
+        applier.ready_made_resume_path = None
+        job = Job(job_title="Engineer", company_name="Tech", job_description="short ad")
+
+        with patch("src.job_manager.easy_applier.get_ready_made_resume_for_job", return_value=None):
+            assert applier.resolve_ready_made_resume(job) is None
+
+    @pytest.mark.asyncio
+    async def test_uploads_language_matched_resume(self, applier, tmp_path):
+        applier.generated_resume_dir = str(tmp_path)
+        applier.ready_made_resume_path = None
+        language_resume = tmp_path / "resume_de.pdf"
+        language_resume.write_bytes(b"%PDF-1.4")
+        job = Job(job_title="Engineer", company_name="Tech", job_description="long enough ad")
+
+        mock_element = AsyncMock()
+        with (
+            patch(
+                "src.job_manager.easy_applier.get_ready_made_resume_for_job",
+                return_value=language_resume,
+            ),
+            patch("src.job_manager.easy_applier.async_pause"),
+        ):
+            await applier._create_and_upload_resume(mock_element, job)
+
+        mock_element.set_input_files.assert_called_once_with(str(language_resume.resolve()))
+
+    @pytest.mark.asyncio
+    async def test_generates_resume_when_no_language_matches(self, applier, tmp_path):
+        applier.generated_resume_dir = str(tmp_path)
+        applier.ready_made_resume_path = None
+        pdf_bytes = b"%PDF-1.4 generated"
+        applier.resume_generator_manager.pdf_base64 = AsyncMock(
+            return_value=base64.b64encode(pdf_bytes).decode()
+        )
+        job = Job(job_title="Engineer", company_name="Tech", job_description="long enough ad")
+
+        mock_element = AsyncMock()
+        with (
+            patch("src.job_manager.easy_applier.get_ready_made_resume_for_job", return_value=None),
+            patch("src.job_manager.easy_applier.async_pause"),
+        ):
+            await applier._create_and_upload_resume(mock_element, job)
+
+        call_arg = mock_element.set_input_files.call_args[0][0]
+        assert "CV_Tech_Engineer.pdf" in call_arg

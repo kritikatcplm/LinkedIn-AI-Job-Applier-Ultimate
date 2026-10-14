@@ -5,6 +5,7 @@ import re
 import sys
 import threading
 import time
+from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -16,6 +17,11 @@ try:
     from config.app_config import READY_MADE_RESUME_PATH
 except ImportError:
     READY_MADE_RESUME_PATH = None
+
+try:
+    from config.app_config import READY_MADE_RESUME_BY_LANGUAGE
+except ImportError:
+    READY_MADE_RESUME_BY_LANGUAGE = {}
 
 try:
     from config.app_config import READY_MADE_PHOTO_PATH
@@ -141,6 +147,128 @@ def get_ready_made_resume() -> Path | None:
         return None
     resolved = Path(READY_MADE_RESUME_PATH).resolve()
     return resolved if resolved.is_file() else None
+
+
+# Distinctive function words used to guess the language of a job advertisement.
+# Only languages that can be mapped to a ready-made resume need an entry here.
+_AD_LANGUAGE_STOPWORDS: Dict[str, set] = {
+    "english": {
+        "the",
+        "and",
+        "with",
+        "you",
+        "your",
+        "our",
+        "we",
+        "are",
+        "will",
+        "this",
+        "that",
+        "have",
+        "for",
+        "from",
+        "not",
+        "they",
+        "their",
+        "about",
+        "which",
+        "should",
+        "would",
+        "position",
+        "experience",
+        "working",
+        "role",
+        "skills",
+    },
+    "german": {
+        "und",
+        "der",
+        "die",
+        "das",
+        "nicht",
+        "sie",
+        "wir",
+        "sind",
+        "für",
+        "mit",
+        "den",
+        "dem",
+        "ein",
+        "eine",
+        "einen",
+        "ist",
+        "werden",
+        "auch",
+        "als",
+        "oder",
+        "bei",
+        "zum",
+        "zur",
+        "haben",
+        "ihre",
+        "wird",
+        "können",
+        "sowie",
+        "diese",
+        "dieser",
+        "unser",
+        "stelle",
+        "erfahrung",
+        "kenntnisse",
+    },
+}
+
+# Minimum number of words a text must contain before its language is guessed.
+_MIN_WORDS_FOR_LANGUAGE_DETECTION = 20
+
+
+def detect_text_language(text: str) -> str | None:
+    """
+    Guess the language of a job advertisement from common function words.
+
+    Returns the lowercase language name ("english", "german", ...) or None when
+    the text is empty, too short, or no listed language clearly dominates.
+    """
+    if not text:
+        return None
+
+    words = re.findall(r"[a-zà-ÿ]+", text.lower())
+    if len(words) < _MIN_WORDS_FOR_LANGUAGE_DETECTION:
+        return None
+
+    word_counts = Counter(words)
+    scores = {
+        language: sum(word_counts[word] for word in stopwords)
+        for language, stopwords in _AD_LANGUAGE_STOPWORDS.items()
+    }
+    best_language = max(scores, key=scores.get)
+    best_score = scores[best_language]
+    if best_score == 0:
+        return None
+
+    runner_up = max(score for language, score in scores.items() if language != best_language)
+    if best_score <= runner_up:
+        return None
+    return best_language
+
+
+def get_ready_made_resume_for_language(language: str) -> Path | None:
+    """Return the ready-made resume configured for a language, if it exists on disk."""
+    if not language:
+        return None
+    configured_path = (READY_MADE_RESUME_BY_LANGUAGE or {}).get(language.lower())
+    if not configured_path:
+        return None
+    resolved = Path(configured_path).resolve()
+    return resolved if resolved.is_file() else None
+
+
+def get_ready_made_resume_for_job(job_description: str) -> Path | None:
+    """
+    Return the ready-made resume configured for the language of a vacancy's
+    advertisement, or None when the language is unknown or not configured.
+    """
+    return get_ready_made_resume_for_language(detect_text_language(job_description))
 
 
 def get_ready_made_photo() -> Path | None:

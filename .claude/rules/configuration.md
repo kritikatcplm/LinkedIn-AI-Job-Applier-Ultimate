@@ -10,8 +10,11 @@
 - `COLLECT_INFO_MODE` — gather stats only, no applications
 - `UPLOAD_RESUME` — (Indeed only) upload a resume file if `True`; use Indeed on-site resume if `False`
 - `EASY_APPLY_ONLY_MODE` — skip non-Easy Apply jobs (LinkedIn only; Indeed always uses Easy Apply flow)
+- `SAP_MM_AUTO_APPLY_MODE` — auto-select only SAP MM / Materials Management roles, bypassing the general LLM/monkey-mode interest decision (blacklists, duplicate checks, apply limits and apply-method settings still apply)
+- `EXTERNAL_APPLY_SKIP_ATSES` — external ATS hosts (matched as URL substrings) the company-site apply agent will not attempt; remove an entry to try that platform
 - `RESTART_EVERY_DAY` — auto-restart every 24h (LinkedIn only)
 - `READY_MADE_RESUME_PATH` — path to a ready-made resume PDF; if empty, a new resume is generated per vacancy
+- `READY_MADE_RESUME_BY_LANGUAGE` — maps advertisement languages to ready-made resume PDFs (e.g. `{"german": "resume_de.pdf"}`); ignored when `READY_MADE_RESUME_PATH` is set
 - `RESUME_STYLE` — style for generated resumes (`"FAANGPath"`, `"Cloyola Grey"`, `"Modern Blue"`, `"Modern Grey"`, `"Default"`, `"Clean Blue"`); `None` prompts interactively
 - `LLM_MODEL_TYPE` — provider: `"gemini"`, `"openai"`, `"openrouter"`, `"claude"`, `"ollama"`
 - `EASY_APPLY_MODEL` — model name for Easy Apply

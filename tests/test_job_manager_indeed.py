@@ -599,6 +599,7 @@ class TestApplyJob:
             patch("src.job_manager.indeed.job_manager_indeed.COLLECT_INFO_MODE", False),
             patch("src.job_manager.indeed.job_manager_indeed.MONKEY_MODE", False),
             patch("src.job_manager.indeed.job_manager_indeed.EASY_APPLY_ONLY_MODE", True),
+            patch("src.job_manager.indeed.job_manager_indeed.SAP_MM_AUTO_APPLY_MODE", False),
         ):
             result = await manager.apply_job(AsyncMock())
 

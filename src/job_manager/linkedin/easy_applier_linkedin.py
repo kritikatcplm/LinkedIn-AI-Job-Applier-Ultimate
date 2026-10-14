@@ -844,7 +844,7 @@ class LinkedInEasyApplier(BaseEasyApplier):
                         is not None
                     ):
                         await self._create_and_upload_resume(upload_element, job)
-                    elif self.ready_made_resume_path is not None:
+                    elif self.resolve_ready_made_resume(job) is not None:
                         logger.info(
                             "Resume generator is not ready; falling back to ready-made resume"
                         )

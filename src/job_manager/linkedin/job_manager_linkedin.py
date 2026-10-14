@@ -11,9 +11,11 @@ from playwright.sync_api import Page
 from config.app_config import (
     COLLECT_INFO_MODE,
     EASY_APPLY_ONLY_MODE,
+    EXTERNAL_APPLY_SKIP_ATSES,
     MAX_APPLIES_NUM,
     MINIMUM_WAIT_TIME_SEC,
     MONKEY_MODE,
+    SAP_MM_AUTO_APPLY_MODE,
     TEST_MODE,
 )
 from config.constants import COVER_LETTER_DIR, OUTPUT_DIR_LINKEDIN, RESUME_DIR, SEARCH_CONFIG_FILE
@@ -38,13 +40,6 @@ from src.utils.utils import async_pause, load_yaml_file, sanitize_text
 
 search_config = load_yaml_file(SEARCH_CONFIG_FILE)
 logger.info(f"Maximum allowed number of applications: {MAX_APPLIES_NUM}")
-
-# External ATSes browser-use can't reliably automate: stale element indices
-# cause infinite step loops with no exception. Matched as URL substrings.
-EXTERNAL_APPLY_SKIP_ATSES: tuple[str, ...] = (
-    "phenom",
-    "successfactors",
-)
 
 
 class LinkedInJobManager(BaseJobManager):
@@ -347,7 +342,15 @@ class LinkedInJobManager(BaseJobManager):
                 logger.warning(f"Skipping the vacancy for the reason: {reason}")
                 await async_pause(1, 2)
             else:
-                if MONKEY_MODE is True and COLLECT_INFO_MODE is False:
+                if SAP_MM_AUTO_APPLY_MODE and COLLECT_INFO_MODE is False:
+                    job_is_interesting = self._is_sap_mm_related_job(job)
+                    score = 100 if job_is_interesting else 0
+                    reasoning = (
+                        "Matched SAP MM auto-apply filter"
+                        if job_is_interesting
+                        else "Did not match SAP MM auto-apply filter"
+                    )
+                elif MONKEY_MODE is True and COLLECT_INFO_MODE is False:
                     # in 'monkey mode' any vacancy is considered interesting
                     job_is_interesting = True
                     score = 0
@@ -395,16 +398,21 @@ class LinkedInJobManager(BaseJobManager):
                 if EASY_APPLY_ONLY_MODE is False:
                     apply_url = await self._check_apply_button()
                     if apply_url:
+                        evaluation["application_method"] = "company_site"
                         if TEST_MODE:
                             apply_result = "Skip", "Test mode"
                         elif any(host in apply_url for host in EXTERNAL_APPLY_SKIP_ATSES):
                             logger.info(f"Skipping unsupported external ATS: {apply_url}")
                             apply_result = "Skip", f"Unsupported external ATS: {apply_url}"
                         else:
-                            apply_result = await self.llm_agent_component.apply_to_job(apply_url)
+                            apply_result = await self.llm_agent_component.apply_to_job(
+                                apply_url, job.job_description
+                            )
                     else:
+                        evaluation["application_method"] = "linkedin_easy_apply"
                         apply_result = await self.easy_apply(job)
                 else:
+                    evaluation["application_method"] = "linkedin_easy_apply"
                     apply_result = await self.easy_apply(job)
                 if self.submitted_resume_path:
                     evaluation["submitted_resume_path"] = self.submitted_resume_path

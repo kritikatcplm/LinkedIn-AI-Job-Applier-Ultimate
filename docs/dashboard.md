@@ -177,6 +177,10 @@ It does not edit `.env` secrets.
 
 The search config editor normalizes the date-posted key so `24_hours` works correctly in the UI even though the internal Pydantic model uses `day_24_hours`.
 
+The app config editor includes `SAP_MM_AUTO_APPLY_MODE`, which narrows automatic applications to roles matching SAP MM / Materials Management. Turn off `EASY_APPLY_ONLY_MODE` to let the bot attempt company-site applications as well as LinkedIn Easy Apply; external ATS success is not guaranteed.
+
+The latest run's applied, skipped, and failed jobs are written to `data/output/<site>/last_run_report.yaml`. Each entry includes its outcome, reason, application method, and job URL. Dashboard-launched runs also retain per-run job and event details under Run History, with JSON export.
+
 ## Notes And Limitations
 
 - The dashboard is local-first and unauthenticated by default.

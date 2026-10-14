@@ -80,6 +80,60 @@ def job_applier(mock_page, mock_resume_anonymizer, mock_search_component):
 class TestJobApplierInitialization:
     """Test LinkedInJobManager initialization"""
 
+    @pytest.mark.parametrize(
+        ("title", "description"),
+        [
+            (
+                "SAP MM Functional Consultant",
+                "Configure SAP Materials Management procurement processes.",
+            ),
+            ("SAP S/4HANA MM Consultant", "Materials Management and inventory customizing."),
+            ("SAP MM/WM Consultant", "MM and WM configuration for a manufacturing client."),
+            ("SAP Materials Management Specialist", "Master data and purchasing processes."),
+            ("SAP Consultant", "You will work in the SAP MM module on procurement processes."),
+            ("SAP Procurement Consultant", "Source-to-pay processes in SAP S/4HANA."),
+            ("SAP Inventory Management Consultant", "Goods receipt and physical inventory in SAP."),
+            (
+                "Materials Management Consultant",
+                "SAP ECC and S/4HANA materials management configuration.",
+            ),
+        ],
+    )
+    def test_sap_mm_matcher_accepts_related_roles(self, job_applier, title, description):
+        job = Job(
+            job_title=title,
+            company_name="Acme",
+            url="https://linkedin.com/jobs/view/12345",
+            job_description=description,
+        )
+
+        assert job_applier._is_sap_mm_related_job(job) is True
+
+    @pytest.mark.parametrize(
+        ("title", "description"),
+        [
+            ("SAP FI Consultant", "Implement financial accounting and controlling processes."),
+            ("SAP SD Consultant", "Sales order processing and billing."),
+            ("SAP ABAP Developer", "Develop ABAP reports and enhancements."),
+            ("SAP Basis Administrator", "Manage SAP system landscapes and transports."),
+            ("SAP SuccessFactors Consultant", "Implement Employee Central modules."),
+            ("Warehouse Manager", "Lead warehouse operations in a distribution centre."),
+            (
+                "Materials Management Consultant",
+                "Manage factory materials and inventory without an ERP focus.",
+            ),
+        ],
+    )
+    def test_sap_mm_matcher_rejects_unrelated_roles(self, job_applier, title, description):
+        job = Job(
+            job_title=title,
+            company_name="Acme",
+            url="https://linkedin.com/jobs/view/12345",
+            job_description=description,
+        )
+
+        assert job_applier._is_sap_mm_related_job(job) is False
+
     def test_init_sets_basic_attributes(
         self, mock_page, mock_resume_anonymizer, mock_search_component
     ):
@@ -141,8 +195,47 @@ class TestSetters:
         assert job_applier.resume_generator_manager == mock_generator
 
 
+class TestRunReporting:
+    @pytest.mark.asyncio
+    async def test_apply_result_persists_reason_and_application_method(self, job_applier):
+        job_applier.applies_num = 0
+        job_applier.last_run_report = {
+            "summary": {"applied": 0, "skipped": 0, "failed": 0, "other": 0},
+            "jobs": [],
+        }
+        job = Job(
+            job_title="SAP MM Consultant",
+            company_name="Acme",
+            url="https://linkedin.com/jobs/view/12345",
+        )
+        evaluation = {"application_method": "company_site", "interest_score": 91}
+
+        with (
+            patch("src.job_manager.job_manager.emit_event") as emit_event,
+            patch.object(job_applier, "_save_data_to_yaml") as save_report,
+            patch.object(job_applier, "_save_company"),
+            patch("src.job_manager.job_manager.COLLECT_INFO_MODE", False),
+        ):
+            await job_applier._handle_apply_result(
+                ("Skip", "External application was unavailable"), job, evaluation=evaluation
+            )
+
+        assert emit_event.call_args.kwargs["reason"] == "External application was unavailable"
+        assert job_applier.last_run_report["summary"]["skipped"] == 1
+        assert job_applier.last_run_report["jobs"][0]["application_method"] == "company_site"
+        assert job_applier.last_run_report["jobs"][0]["reason"] == (
+            "External application was unavailable"
+        )
+        assert save_report.call_args.args[1] == "last_run_report.yaml"
+
+
 class TestSetParameters:
     """Test set_parameters method"""
+
+    @pytest.fixture(autouse=True)
+    def isolate_run_report(self, job_applier):
+        with patch.object(job_applier, "_save_data_to_yaml"):
+            yield
 
     def test_set_parameters_basic_attributes(self, job_applier):
         """Test setting basic parameters"""
@@ -885,6 +978,11 @@ class TestExtractSkillsFromVacancy:
 
 class TestHandleApplyResult:
     """Test _handle_apply_result async method"""
+
+    @pytest.fixture(autouse=True)
+    def isolate_run_report(self, job_applier):
+        with patch.object(job_applier, "_save_data_to_yaml"):
+            yield
 
     @pytest.mark.asyncio
     async def test_handle_apply_result_success(self, job_applier):

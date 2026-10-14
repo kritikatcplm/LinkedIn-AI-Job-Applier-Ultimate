@@ -243,7 +243,8 @@ This project enhances the original codebase with several powerful new features:
     *   `LLM_MODEL_TYPE`: Choose your LLM provider (e.g., "gemini").
     *   `EASY_APPLY_MODEL`: Specify the exact model to use for Easy Apply vacancies (e.g., "gemini-2.0-flash").
     *   `APPLY_AGENT_MODEL`: *(LinkedIn only)* Specify the exact agent model to use for Non-Easy Apply vacancies (e.g., "gemini-2.5-flash").
-    *   `READY_MADE_RESUME_PATH`: Path to a ready-made resume PDF (e.g. `"data/resumes/resume.pdf"`). If set, the bot uses this file for every application instead of generating a new resume. If empty, a tailored resume is generated for each vacancy.
+    *   `READY_MADE_RESUME_PATH`: Path to a ready-made resume PDF (e.g. `"data/resumes/resume.pdf"`). If set, the bot uses this file for every application instead of generating a new resume. If empty, a tailored resume is generated for each vacancy (unless the vacancy matches `READY_MADE_RESUME_BY_LANGUAGE`).
+    *   `READY_MADE_RESUME_BY_LANGUAGE`: Ready-made resume PDFs selected by the language of the job advertisement (e.g. `{"german": "Kritika_Singh_CV_DE.pdf"}`). When an advertisement is detected to be in one of the listed languages, that file is uploaded as-is instead of generating a tailored resume. Languages that are not listed or could not be detected still get a generated resume. Ignored whenever `READY_MADE_RESUME_PATH` is set.
     *   `RESUME_STYLE`: Resume style to use for generated resumes. If set, skips the interactive style selection prompt. If `None`, prompts interactively (or falls back to default in Docker/headless mode). Possible values: `"FAANGPath"`, `"Cloyola Grey"`, `"Modern Blue"`, `"Modern Grey"`, `"Default"`, `"Clean Blue"`.
 
     **Supported LLM models**
@@ -327,6 +328,7 @@ This project enhances the original codebase with several powerful new features:
     You have two options:
     *   **Automatic Creation (recommended):** Leave `READY_MADE_RESUME_PATH` empty in `config/app_config.py` and the bot will generate a new resume tailored to each vacancy. Generated resumes are stored in `data/resumes/generated_resumes/`. Sections that are the same across vacancies (e.g. header) are generated once and cached in `data/resumes/templates/<section_name>.html`. Delete a cached file to force re-generation.
     *   **Ready-Made Resume:** Set `READY_MADE_RESUME_PATH` in `config/app_config.py` to the path of your resume PDF (e.g. `"data/resumes/resume.pdf"`). The bot will use that file for every application.
+    *   **Ready-Made Resume per Language:** Set `READY_MADE_RESUME_BY_LANGUAGE` in `config/app_config.py` to map advertisement languages to resume PDFs (e.g. `{"german": "Kritika_Singh_CV_DE.pdf"}`). Whenever a vacancy's advertisement is in one of the listed languages, that file is uploaded instead of generating a resume. Vacancies in other languages get a generated resume, so this option can be combined with automatic creation. It is ignored when `READY_MADE_RESUME_PATH` is set, since that path wins for every application.
 
     **I also recommend to test resume generation before starting applying jobs**.
 

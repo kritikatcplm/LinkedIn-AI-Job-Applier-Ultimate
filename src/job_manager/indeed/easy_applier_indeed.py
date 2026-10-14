@@ -336,8 +336,9 @@ class IndeedEasyApplier(BaseEasyApplier):
                 logger.warning("Resume file input not found on resume selection page")
                 return
 
-            if self.ready_made_resume_path is not None:
-                abs_path = os.path.abspath(str(self.ready_made_resume_path))
+            ready_made_resume = self.resolve_ready_made_resume(job)
+            if ready_made_resume is not None:
+                abs_path = os.path.abspath(str(ready_made_resume))
                 await file_input.set_input_files(abs_path)
                 logger.info(f"Uploaded ready-made resume: {abs_path}")
             else:

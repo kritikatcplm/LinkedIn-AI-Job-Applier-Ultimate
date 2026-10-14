@@ -41,6 +41,7 @@ EDITABLE_APP_CONFIG_KEYS = {
     "TEST_MODE",
     "COLLECT_INFO_MODE",
     "EASY_APPLY_ONLY_MODE",
+    "SAP_MM_AUTO_APPLY_MODE",
     "LINKEDIN_RECOMMENDED_JOBS_MODE",
     "LINKEDIN_TOP_APPLICANT_JOBS_MODE",
     "RESTART_EVERY_DAY",
@@ -183,6 +184,7 @@ def _build_run_jobs(run_id: str) -> List[Dict[str, Any]]:
                 "llm_time_seconds": 0.0,
                 "executed_at": event.get("timestamp"),
                 "submitted_resume_path": payload.get("submitted_resume_path"),
+                "application_method": payload.get("application_method"),
                 "stage": payload.get("stage"),
                 "last_message": event.get("message"),
                 "updated_at": event.get("timestamp"),
@@ -197,6 +199,9 @@ def _build_run_jobs(run_id: str) -> List[Dict[str, Any]]:
         job["updated_at"] = event.get("timestamp") or job.get("updated_at")
         job["submitted_resume_path"] = payload.get("submitted_resume_path") or job.get(
             "submitted_resume_path"
+        )
+        job["application_method"] = payload.get("application_method") or job.get(
+            "application_method"
         )
 
         event_type = event.get("type")
@@ -555,7 +560,11 @@ def get_search_config() -> Dict[str, Any]:
 
 
 def update_search_config(config: Dict[str, Any]) -> Dict[str, Any]:
-    config = deepcopy(config)
+    # Merge over the stored config so settings the dashboard UI does not manage
+    # (for example search_passes) are preserved instead of being reset.
+    merged = _read_yaml(ROOT_DIR / SEARCH_CONFIG_FILE, {})
+    merged.update(deepcopy(config))
+    config = merged
     date_config = config.setdefault("date", {})
     if "24_hours" in date_config:
         date_config["day_24_hours"] = date_config["24_hours"]

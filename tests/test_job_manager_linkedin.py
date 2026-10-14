@@ -855,6 +855,47 @@ class TestApplyJob:
         manager.pause_checker = None
 
     @pytest.mark.asyncio
+    async def test_sap_mm_mode_overrides_general_interest_rejection(self, manager, mock_page):
+        self._setup_manager(manager)
+        job = Job(
+            job_title="SAP MM Functional Consultant",
+            company_name="Tech Corp",
+            url=LINKEDIN_JOB_URL,
+            job_description="Configure SAP Materials Management procurement processes.",
+        )
+        manager.llm_answerer_component = MagicMock()
+        manager.llm_answerer_component.job_is_interesting.return_value = (
+            False,
+            10,
+            "General match score is low",
+        )
+        new_page = AsyncMock()
+        new_page.url = LINKEDIN_JOB_URL
+        mock_page.context.new_page = AsyncMock(return_value=new_page)
+
+        with (
+            patch.object(
+                manager, "_get_detailed_job_description", new_callable=AsyncMock, return_value=job
+            ),
+            patch("src.job_manager.linkedin.job_manager_linkedin.async_pause", new_callable=AsyncMock),
+            patch.object(
+                manager, "easy_apply", new_callable=AsyncMock, return_value=("Success", "")
+            ) as easy_apply,
+            patch.object(manager, "_handle_apply_result", new_callable=AsyncMock),
+            patch.object(manager, "_extract_skills_from_vacancy", return_value="SAP MM"),
+            patch.object(manager, "_update_skill_stat"),
+            patch("src.job_manager.linkedin.job_manager_linkedin.SAP_MM_AUTO_APPLY_MODE", True),
+            patch("src.job_manager.linkedin.job_manager_linkedin.COLLECT_INFO_MODE", False),
+            patch("src.job_manager.linkedin.job_manager_linkedin.MONKEY_MODE", True),
+            patch("src.job_manager.linkedin.job_manager_linkedin.EASY_APPLY_ONLY_MODE", True),
+        ):
+            result = await manager.apply_job({"url": LINKEDIN_JOB_URL})
+
+        assert result == "Success"
+        easy_apply.assert_awaited_once_with(job)
+        manager.llm_answerer_component.job_is_interesting.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_skips_blacklisted_company(self, manager, mock_page, test_job):
         self._setup_manager(manager)
         manager.job_blacklist = ["tech corp"]
@@ -966,6 +1007,7 @@ class TestApplyJob:
             patch("src.job_manager.linkedin.job_manager_linkedin.COLLECT_INFO_MODE", False),
             patch("src.job_manager.linkedin.job_manager_linkedin.MONKEY_MODE", False),
             patch("src.job_manager.linkedin.job_manager_linkedin.EASY_APPLY_ONLY_MODE", True),
+            patch("src.job_manager.linkedin.job_manager_linkedin.SAP_MM_AUTO_APPLY_MODE", False),
         ):
             result = await manager.apply_job({"url": LINKEDIN_JOB_URL})
 

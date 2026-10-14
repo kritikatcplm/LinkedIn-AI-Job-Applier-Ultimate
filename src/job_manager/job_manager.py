@@ -1,4 +1,5 @@
 import os
+import re
 import traceback
 from abc import ABC, abstractmethod
 from datetime import datetime
@@ -7,7 +8,14 @@ from typing import Any, Dict, List, Tuple
 
 import yaml
 
-from config.app_config import COLLECT_INFO_MODE, JOB_SITE, MAX_APPLIES_NUM, TEST_MODE
+from config.app_config import (
+    COLLECT_INFO_MODE,
+    EASY_APPLY_ONLY_MODE,
+    JOB_SITE,
+    MAX_APPLIES_NUM,
+    SAP_MM_AUTO_APPLY_MODE,
+    TEST_MODE,
+)
 from config.constants import OUTPUT_DIR_INDEED, OUTPUT_DIR_LINKEDIN
 from config.logger_config import logger
 from src.dashboard.runtime import emit_event
@@ -20,6 +28,37 @@ LAST_RUN_FILE = Path(OUTPUT_DIR) / "last_run.yaml"
 
 
 class BaseJobManager(ABC):
+    # Title signals that indicate SAP Materials Management ownership
+    _SAP_MM_TITLE_PATTERNS: Tuple[str, ...] = (
+        r"\bMM\b",
+        r"materials\s+management",
+        r"\bprocurement\b",
+        r"\bpurchasing\b",
+        r"\binventory\b",
+    )
+
+    @classmethod
+    def _is_sap_mm_related_job(cls, job: Job) -> bool:
+        """Match SAP Materials Management roles using the title plus description.
+
+        A role qualifies when it is clearly an SAP role and the posting signals MM
+        ownership, either through the title (MM, Materials Management, procurement,
+        purchasing, inventory) or through an explicit "SAP MM" / "SAP Materials
+        Management" mention in the body. Other SAP modules such as FI, SD, ABAP or
+        Basis are deliberately not selected.
+        """
+        title = job.job_title or ""
+        text = " ".join(
+            value for value in (title, job.job_description or "", job.skills or "") if value
+        )
+        if not re.search(r"\bSAP\b|S/4HANA", text, re.IGNORECASE):
+            return False
+        if any(
+            re.search(pattern, title, re.IGNORECASE) for pattern in cls._SAP_MM_TITLE_PATTERNS
+        ):
+            return True
+        return bool(re.search(r"\bSAP\s*(?:MM|Materials\s+Management)\b", text, re.IGNORECASE))
+
     @staticmethod
     def _is_target_closed_error(error: Exception) -> bool:
         """Return True when Playwright reports a closed page, context, or browser."""
@@ -54,6 +93,19 @@ class BaseJobManager(ABC):
         logger.info("Setting job manager parameters")
         self.parameters = parameters
         self.max_applies_num = MAX_APPLIES_NUM
+        now = datetime.now().isoformat(timespec="seconds")
+        self.last_run_report = {
+            "run_id": os.environ.get("DASHBOARD_RUN_ID")
+            or datetime.now().strftime("local-%Y%m%d-%H%M%S"),
+            "started_at": now,
+            "updated_at": now,
+            "settings": {
+                "sap_mm_auto_apply": SAP_MM_AUTO_APPLY_MODE,
+                "easy_apply_only": EASY_APPLY_ONLY_MODE,
+            },
+            "summary": {"applied": 0, "skipped": 0, "failed": 0, "other": 0},
+            "jobs": [],
+        }
         self.apply_once_at_company = parameters.get("apply_once_at_company", True)
         company_blacklist = parameters.get("company_blacklist") or []
         self.job_blacklist = [sanitize_text(j) for j in company_blacklist]
@@ -460,15 +512,60 @@ class BaseJobManager(ABC):
     ) -> None:
         """Handle the result of a job application attempt"""
         result, _ = apply_result
+        reason = apply_result[1]
+        application_method = (evaluation or {}).get("application_method")
         emit_event(
             "job_result",
             f"Job result: {result}",
             result=result.lower(),
+            reason=reason,
             job_title=job.job_title,
             company_name=job.company_name,
             url=job.url,
+            application_method=application_method,
+            interest_score=(evaluation or {}).get("interest_score"),
+            interest_reason=(evaluation or {}).get("interest_reason"),
             submitted_resume_path=(evaluation or {}).get("submitted_resume_path"),
         )
+        normalized_result = result.lower()
+        report_status = {
+            "success": "applied",
+            "skip": "skipped",
+            "error": "failed",
+            "failed": "failed",
+        }.get(normalized_result, "other")
+        report = getattr(self, "last_run_report", None)
+        if report is None:
+            now = datetime.now().isoformat(timespec="seconds")
+            report = {
+                "run_id": os.environ.get("DASHBOARD_RUN_ID")
+                or datetime.now().strftime("local-%Y%m%d-%H%M%S"),
+                "started_at": now,
+                "settings": {
+                    "sap_mm_auto_apply": SAP_MM_AUTO_APPLY_MODE,
+                    "easy_apply_only": EASY_APPLY_ONLY_MODE,
+                },
+                "summary": {"applied": 0, "skipped": 0, "failed": 0, "other": 0},
+                "jobs": [],
+            }
+            self.last_run_report = report
+        report["updated_at"] = datetime.now().isoformat(timespec="seconds")
+        report["summary"][report_status] += 1
+        report["jobs"].append(
+            {
+                "status": report_status,
+                "job_title": job.job_title,
+                "company_name": job.company_name,
+                "url": job.url,
+                "reason": reason,
+                "application_method": application_method,
+                "interest_score": (evaluation or {}).get("interest_score"),
+                "interest_reason": (evaluation or {}).get("interest_reason"),
+                "submitted_resume_path": (evaluation or {}).get("submitted_resume_path"),
+                "executed_at": report["updated_at"],
+            }
+        )
+        self._save_data_to_yaml(report, "last_run_report.yaml", sort_keys=False)
         self.applies_num += 1
         if result != "Limit" and COLLECT_INFO_MODE is False:
             if self._should_save_skip_as_interesting(apply_result):

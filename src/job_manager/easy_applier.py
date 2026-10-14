@@ -2,6 +2,7 @@ import base64
 import os
 import traceback
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any, List, Tuple
 
 from httpx import HTTPStatusError
@@ -9,7 +10,14 @@ from httpx import HTTPStatusError
 from config.logger_config import logger
 from src.pydantic_models.job_models import Job, Question
 from src.utils.browser_utils import debug_capture
-from src.utils.utils import ConfigError, async_pause, load_yaml_file, sanitize_text, save_yaml_file
+from src.utils.utils import (
+    ConfigError,
+    async_pause,
+    get_ready_made_resume_for_job,
+    load_yaml_file,
+    sanitize_text,
+    save_yaml_file,
+)
 
 
 class NoInfoException(Exception):
@@ -55,6 +63,17 @@ class BaseEasyApplier(ABC):
     async def _find_and_handle_date_question(self, section: Any) -> bool:
         return False
 
+    def resolve_ready_made_resume(self, job: Job) -> Path | None:
+        """
+        Return the ready-made resume to upload for this vacancy, or None to generate one.
+
+        An unconditional READY_MADE_RESUME_PATH wins; otherwise the file configured for
+        the language of the vacancy's advertisement is used when available.
+        """
+        if self.ready_made_resume_path is not None:
+            return self.ready_made_resume_path
+        return get_ready_made_resume_for_job(job.job_description)
+
     async def _create_and_upload_resume(self, element: Any, job: Job) -> None:
         try:
             os.makedirs(self.generated_resume_dir, exist_ok=True)
@@ -62,8 +81,9 @@ class BaseEasyApplier(ABC):
             logger.error(f"Failed to create directory: {self.generated_resume_dir}. Error: {e}")
             raise
 
-        if self.ready_made_resume_path is not None:
-            file_path_pdf = os.path.abspath(str(self.ready_made_resume_path))
+        ready_made_resume = self.resolve_ready_made_resume(job)
+        if ready_made_resume is not None:
+            file_path_pdf = os.path.abspath(str(ready_made_resume))
             logger.info(f"Using ready-made resume: {file_path_pdf}")
         else:
             generator_ready = (

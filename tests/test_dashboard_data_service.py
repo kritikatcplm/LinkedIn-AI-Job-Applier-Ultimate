@@ -169,6 +169,44 @@ def test_update_search_config_normalizes_24_hours(monkeypatch, tmp_path):
     assert "day_24_hours" not in file_content
 
 
+def test_update_search_config_preserves_search_passes(monkeypatch, tmp_path):
+    """Saving from the dashboard must not wipe geography passes the UI cannot edit."""
+    config_dir = tmp_path / "config"
+    passes = [
+        {"location": "Austria", "remote": True, "hybrid": True, "onsite": True},
+        {"locations": [], "remote": True, "hybrid": False, "onsite": False},
+    ]
+    _write_yaml(
+        config_dir / "search_config.yaml",
+        {"positions": ["SAP MM"], "search_passes": passes},
+    )
+
+    monkeypatch.setattr(data_service, "ROOT_DIR", tmp_path)
+
+    # The dashboard submits only the fields its form manages (no search_passes).
+    data_service.update_search_config(
+        {
+            "positions": ["SAP MM", "SAP Materials Management"],
+            "remote": True,
+            "hybrid": True,
+            "onsite": True,
+            "experience_level": {"mid_senior_level": True},
+            "job_types": {"full_time": True},
+            "date": {"24_hours": False},
+            "locations": [],
+            "apply_once_at_company": False,
+            "company_blacklist": [],
+            "title_blacklist": [],
+            "location_blacklist": [],
+        }
+    )
+
+    saved = yaml.safe_load((config_dir / "search_config.yaml").read_text(encoding="utf-8"))
+
+    assert saved["search_passes"] == passes
+    assert saved["positions"] == ["SAP MM", "SAP Materials Management"]
+
+
 def test_get_run_history_builds_runs_from_events(monkeypatch):
     monkeypatch.setattr(
         data_service,
@@ -302,6 +340,7 @@ def test_get_run_jobs_builds_status_from_events(monkeypatch):
                     "reason": "",
                     "llm_time_seconds": 1.5,
                     "submitted_resume_path": "/tmp/resumes/cto.pdf",
+                    "application_method": "company_site",
                 },
             },
             {
@@ -339,6 +378,10 @@ def test_get_run_jobs_builds_status_from_events(monkeypatch):
     assert any(
         job["status"] == "applied"
         and job["submitted_resume_path"] == "/tmp/resumes/cto.pdf"
+        for job in jobs
+    )
+    assert any(
+        job["status"] == "applied" and job["application_method"] == "company_site"
         for job in jobs
     )
     assert any(
@@ -630,7 +673,7 @@ def test_get_run_detail_includes_screenshots(monkeypatch):
 def test_update_app_config_updates_values(monkeypatch, tmp_path):
     app_config_file = tmp_path / "app_config.py"
     app_config_file.write_text(
-        'HEADLESS_MODE = True\nMAX_APPLIES_NUM = 50\nRESUME_STYLE = "FAANGPath"\n',
+        'HEADLESS_MODE = True\nMAX_APPLIES_NUM = 50\nRESUME_STYLE = "FAANGPath"\nSAP_MM_AUTO_APPLY_MODE = False\n',
         encoding="utf-8",
     )
 
@@ -641,14 +684,17 @@ def test_update_app_config_updates_values(monkeypatch, tmp_path):
             "HEADLESS_MODE": False,
             "MAX_APPLIES_NUM": 25,
             "RESUME_STYLE": "Modern Blue",
+            "SAP_MM_AUTO_APPLY_MODE": True,
         }
     )
 
     assert updated["HEADLESS_MODE"] is False
     assert updated["MAX_APPLIES_NUM"] == 25
     assert updated["RESUME_STYLE"] == "Modern Blue"
+    assert updated["SAP_MM_AUTO_APPLY_MODE"] is True
 
     file_content = app_config_file.read_text(encoding="utf-8")
     assert "HEADLESS_MODE = False" in file_content
     assert "MAX_APPLIES_NUM = 25" in file_content
     assert 'RESUME_STYLE = "Modern Blue"' in file_content
+    assert "SAP_MM_AUTO_APPLY_MODE = True" in file_content

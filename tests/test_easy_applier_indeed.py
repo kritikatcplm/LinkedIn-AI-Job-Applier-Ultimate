@@ -1,5 +1,6 @@
 """Tests for src/job_manager/indeed/easy_applier_indeed.py"""
 
+import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -47,21 +48,24 @@ def applier(mock_page, mock_gpt_answerer, mock_resume_anonymizer, tmp_path):
     cover_dir.mkdir()
     answers_file = tmp_path / "answers.yaml"
 
-    with patch(
-        "src.job_manager.indeed.easy_applier_indeed.get_ready_made_resume", return_value=None
+    with (
+        patch(
+            "src.job_manager.indeed.easy_applier_indeed.get_ready_made_resume", return_value=None
+        ),
+        patch("src.job_manager.easy_applier.get_ready_made_resume_for_job", return_value=None),
+        patch("src.job_manager.indeed.easy_applier_indeed.load_yaml_file", return_value=None),
     ):
-        with patch("src.job_manager.indeed.easy_applier_indeed.load_yaml_file", return_value=None):
-            inst = IndeedEasyApplier(
-                page=mock_page,
-                gpt_answerer=mock_gpt_answerer,
-                resume_anonymizer=mock_resume_anonymizer,
-                resume_generator_manager=AsyncMock(),
-                pause_checker=None,
-                answers_file=answers_file,
-                resume_dir=resume_dir,
-                cover_letter_dir=cover_dir,
-                test_mode=False,
-            )
+        inst = IndeedEasyApplier(
+            page=mock_page,
+            gpt_answerer=mock_gpt_answerer,
+            resume_anonymizer=mock_resume_anonymizer,
+            resume_generator_manager=AsyncMock(),
+            pause_checker=None,
+            answers_file=answers_file,
+            resume_dir=resume_dir,
+            cover_letter_dir=cover_dir,
+            test_mode=False,
+        )
     inst.current_job = Job(job_title="Engineer", company_name="TestCorp", url=INDEED_JOB_URL)
     return inst
 
@@ -853,3 +857,77 @@ class TestFillRelevantExperiencePage:
             await applier._fill_relevant_experience_page()
 
         title_input.fill.assert_not_called()
+
+
+class TestHandleResumeSelection:
+    @staticmethod
+    def _find_element_side_effect(radio_input, file_input):
+        async def mock_find(page, selector, timeout=None):
+            if "file-resume-upload-radio-card-file-input" in selector:
+                return file_input
+            if "file-resume-upload-radio-card-input" in selector:
+                return radio_input
+            return None
+
+        return mock_find
+
+    @pytest.mark.asyncio
+    async def test_uploads_language_matched_resume_when_configured(self, applier, tmp_path):
+        language_resume = tmp_path / "CV_DE.pdf"
+        language_resume.write_bytes(b"german")
+        applier.ready_made_resume_path = None
+        applier.resume_generator_manager = None
+
+        radio_input = AsyncMock()
+        radio_input.is_checked = AsyncMock(return_value=True)
+        file_input = AsyncMock()
+        file_input.set_input_files = AsyncMock()
+
+        job = Job(
+            job_title="Engineer",
+            company_name="TestCorp",
+            job_description="We are looking for an engineer to join our team.",
+        )
+
+        with (
+            patch("src.job_manager.indeed.easy_applier_indeed.UPLOAD_RESUME", True),
+            patch(
+                "src.job_manager.indeed.easy_applier_indeed.find_element_safely",
+                new_callable=AsyncMock,
+                side_effect=self._find_element_side_effect(radio_input, file_input),
+            ),
+            patch(
+                "src.job_manager.easy_applier.get_ready_made_resume_for_job",
+                return_value=language_resume,
+            ) as mock_resolve,
+        ):
+            await applier._handle_resume_selection(job)
+
+        mock_resolve.assert_called_once_with(job.job_description)
+        file_input.set_input_files.assert_called_once_with(os.path.abspath(str(language_resume)))
+
+    @pytest.mark.asyncio
+    async def test_generates_resume_when_no_language_match(self, applier):
+        applier.ready_made_resume_path = None
+        applier._create_and_upload_resume = AsyncMock()
+
+        radio_input = AsyncMock()
+        radio_input.is_checked = AsyncMock(return_value=True)
+        file_input = AsyncMock()
+        file_input.set_input_files = AsyncMock()
+
+        job = Job(job_title="Engineer", company_name="TestCorp", job_description="Short ad")
+
+        with (
+            patch("src.job_manager.indeed.easy_applier_indeed.UPLOAD_RESUME", True),
+            patch(
+                "src.job_manager.indeed.easy_applier_indeed.find_element_safely",
+                new_callable=AsyncMock,
+                side_effect=self._find_element_side_effect(radio_input, file_input),
+            ),
+            patch("src.job_manager.easy_applier.get_ready_made_resume_for_job", return_value=None),
+        ):
+            await applier._handle_resume_selection(job)
+
+        applier._create_and_upload_resume.assert_called_once_with(file_input, job)
+        file_input.set_input_files.assert_not_called()

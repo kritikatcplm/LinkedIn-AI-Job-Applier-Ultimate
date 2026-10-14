@@ -11,7 +11,10 @@ from src.utils.utils import (
     ConfigError,
     clean_structured_resume,
     debug_page_elements,
+    detect_text_language,
     format_missing_fields_display,
+    get_ready_made_resume_for_job,
+    get_ready_made_resume_for_language,
     get_user_choice_with_timeout,
     load_yaml_file,
     pause,
@@ -628,3 +631,121 @@ class TestCleanStructuredResume:
 
         result = clean_structured_resume(resume)
         assert result == resume  # Should be unchanged
+
+
+class TestDetectTextLanguage:
+    """Tests for detect_text_language function"""
+
+    def test_detects_english_advertisement(self):
+        ad = (
+            "We are looking for a skilled engineer to join our team. You will work with "
+            "modern tools and your experience with distributed systems is important for "
+            "this role. The position offers growth and we are happy to support your "
+            "development. They should also have strong communication skills."
+        )
+
+        assert detect_text_language(ad) == "english"
+
+    def test_detects_german_advertisement(self):
+        ad = (
+            "Wir suchen eine erfahrene Fachkraft für unser Team. Sie werden mit modernen "
+            "Werkzeugen arbeiten und Ihre Erfahrung mit verteilten Systemen ist für diese "
+            "Stelle wichtig. Die Position bietet Entwicklung und wir unterstützen Ihre "
+            "Kenntnisse mit Schulungen sowie Weiterbildungen."
+        )
+
+        assert detect_text_language(ad) == "german"
+
+    def test_returns_none_for_empty_text(self):
+        assert detect_text_language("") is None
+
+    def test_returns_none_for_short_text(self):
+        assert detect_text_language("We are hiring a the and with engineer") is None
+
+    def test_returns_none_when_no_language_stopwords_are_present(self):
+        ad = " ".join(["acme", "synergy", "platform", "growth", "scale", "impact"] * 6)
+
+        assert detect_text_language(ad) is None
+
+    def test_ignores_digits_and_punctuation(self):
+        ad = " ".join(["1234", "---", "!!!", ")("] * 10)
+
+        assert detect_text_language(ad) is None
+
+
+class TestGetReadyMadeResumeForLanguage:
+    """Tests for get_ready_made_resume_for_language function"""
+
+    def test_returns_resolved_path_for_configured_language(self, tmp_path):
+        resume = tmp_path / "resume_de.pdf"
+        resume.write_bytes(b"%PDF-1.4")
+
+        with patch("src.utils.utils.READY_MADE_RESUME_BY_LANGUAGE", {"english": str(resume)}):
+            assert get_ready_made_resume_for_language("english") == resume.resolve()
+
+    def test_matches_language_case_insensitively(self, tmp_path):
+        resume = tmp_path / "resume_de.pdf"
+        resume.write_bytes(b"%PDF-1.4")
+
+        with patch("src.utils.utils.READY_MADE_RESUME_BY_LANGUAGE", {"english": str(resume)}):
+            assert get_ready_made_resume_for_language("English") == resume.resolve()
+
+    def test_returns_none_for_unconfigured_language(self, tmp_path):
+        resume = tmp_path / "resume_de.pdf"
+        resume.write_bytes(b"%PDF-1.4")
+
+        with patch("src.utils.utils.READY_MADE_RESUME_BY_LANGUAGE", {"english": str(resume)}):
+            assert get_ready_made_resume_for_language("german") is None
+
+    def test_returns_none_when_file_is_missing(self, tmp_path):
+        with patch(
+            "src.utils.utils.READY_MADE_RESUME_BY_LANGUAGE",
+            {"english": str(tmp_path / "missing.pdf")},
+        ):
+            assert get_ready_made_resume_for_language("english") is None
+
+    def test_returns_none_without_language(self, tmp_path):
+        resume = tmp_path / "resume_de.pdf"
+        resume.write_bytes(b"%PDF-1.4")
+
+        with patch("src.utils.utils.READY_MADE_RESUME_BY_LANGUAGE", {"english": str(resume)}):
+            assert get_ready_made_resume_for_language("") is None
+
+    def test_returns_none_when_no_languages_are_configured(self):
+        with patch("src.utils.utils.READY_MADE_RESUME_BY_LANGUAGE", {}):
+            assert get_ready_made_resume_for_language("english") is None
+
+
+class TestGetReadyMadeResumeForJob:
+    """Tests for get_ready_made_resume_for_job function"""
+
+    def test_resolves_resume_for_detected_advertisement_language(self, tmp_path):
+        resume = tmp_path / "resume_de.pdf"
+        resume.write_bytes(b"%PDF-1.4")
+        ad = (
+            "Wir suchen eine erfahrene Fachkraft für unser Team. Sie werden mit modernen "
+            "Werkzeugen arbeiten und Ihre Erfahrung mit verteilten Systemen ist für diese "
+            "Stelle wichtig. Die Position bietet Entwicklung und wir unterstützen Ihre "
+            "Kenntnisse mit Schulungen sowie Weiterbildungen."
+        )
+
+        with patch("src.utils.utils.READY_MADE_RESUME_BY_LANGUAGE", {"german": str(resume)}):
+            assert get_ready_made_resume_for_job(ad) == resume.resolve()
+
+    def test_returns_none_when_advertisement_language_is_undetected(self, tmp_path):
+        resume = tmp_path / "resume_de.pdf"
+        resume.write_bytes(b"%PDF-1.4")
+
+        with patch("src.utils.utils.READY_MADE_RESUME_BY_LANGUAGE", {"english": str(resume)}):
+            assert get_ready_made_resume_for_job("We are hiring") is None
+
+    def test_returns_none_when_advertisement_language_is_unconfigured(self, tmp_path):
+        ad = (
+            "Wir suchen eine erfahrene Fachkraft für unser Team. Sie werden mit modernen "
+            "Werkzeugen arbeiten und Ihre Erfahrung mit verteilten Systemen ist für diese "
+            "Stelle wichtig. Die Position bietet Entwicklung und wir unterstützen Ihre "
+            "Kenntnisse mit Schulungen sowie Weiterbildungen."
+        )
+
+        with patch("src.utils.utils.READY_MADE_RESUME_BY_LANGUAGE", {}):
+            assert get_ready_made_resume_for_job(ad) is None

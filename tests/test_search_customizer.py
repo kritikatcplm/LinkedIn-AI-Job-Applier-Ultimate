@@ -4,7 +4,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from config.constants import SEARCH_CONFIG_FILE
+from src.job_manager.linkedin.search_customizer_linkedin import (
+    SearchCustomizer as LinkedInSearchCustomizer,
+)
 from src.job_manager.search_customizer import BaseSearchCustomizer
+from src.pydantic_models.config_models import SearchConfig
+from src.utils.utils import load_yaml_file
 
 
 class ConcreteSearchCustomizer(BaseSearchCustomizer):
@@ -128,3 +134,81 @@ class TestIsJobBlacklisted:
         customizer.title_blacklist = ["sales"]
         assert customizer.is_job_blacklisted("Sales Manager", "Corp", "NY") is True
         assert customizer.is_job_blacklisted("Software Engineer", "Corp", "NY") is False
+
+
+class TestConfiguredGeoStrategy:
+    """Verify the configured SAP MM geography strategy in config/search_config.yaml.
+
+    Requirement: office jobs in Austria, remote-only everywhere else, plus a
+    worldwide remote pass for any other country.
+    """
+
+    @pytest.fixture
+    def params(self):
+        return SearchConfig(**load_yaml_file(SEARCH_CONFIG_FILE)).model_dump()
+
+    @staticmethod
+    def _pass_for(params, location_name):
+        return next(
+            passed
+            for passed in params["search_passes"]
+            if str(passed.get("location", "")).lower() == location_name
+        )
+
+    def test_austria_pass_allows_office_work(self, customizer, params):
+        customizer.set_advanced_search_params(params)
+
+        customizer.activate_pass(self._pass_for(params, "austria"))
+
+        assert customizer.locations == ["Austria"]
+        assert customizer.remote is True
+        assert customizer.hybrid is True
+        assert customizer.onsite is True
+
+    def test_every_other_region_is_remote_only(self, customizer, params):
+        customizer.set_advanced_search_params(params)
+
+        non_austria = [
+            passed
+            for passed in params["search_passes"]
+            if str(passed.get("location", "")).lower() != "austria"
+        ]
+
+        assert len(non_austria) >= 3
+        for passed in non_austria:
+            customizer.activate_pass(passed)
+            assert customizer.remote is True
+            assert customizer.hybrid is False
+            assert customizer.onsite is False
+
+    def test_worldwide_pass_clears_location_for_any_country(self, customizer, params):
+        customizer.set_advanced_search_params(params)
+
+        # Start from a concrete location so we prove the worldwide pass resets it.
+        customizer.activate_pass({"location": "Austria", "remote": True})
+        assert customizer.locations == ["Austria"]
+
+        worldwide = next(
+            passed for passed in params["search_passes"] if passed.get("locations") == []
+        )
+        customizer.activate_pass(worldwide)
+
+        assert customizer.locations == []
+        assert customizer.remote is True
+        assert customizer.hybrid is False
+        assert customizer.onsite is False
+
+    def test_search_terms_are_sap_mm_focused(self, params):
+        linkedin_customizer = LinkedInSearchCustomizer(MagicMock())
+        linkedin_customizer.set_advanced_search_params(params)
+
+        query = linkedin_customizer.format_linkedin_keyword_query()
+
+        assert '"SAP MM"' in query
+        assert "SAP Materials Management" in query
+        assert query.count('" OR "') >= 4
+
+    def test_multiple_roles_per_company_are_allowed(self, customizer, params):
+        customizer.set_advanced_search_params(params)
+
+        assert customizer.apply_once_at_company is False

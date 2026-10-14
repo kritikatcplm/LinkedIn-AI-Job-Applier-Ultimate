@@ -216,6 +216,7 @@ function renderJobDetails(job) {
       <div><dt>URL</dt><dd>${job.url ? `<a href="${job.url}" target="_blank" rel="noreferrer">Open posting</a>` : "-"}</dd></div>
       <div><dt>Executed At</dt><dd>${formatDateTime(job.executed_at || job.updated_at)}</dd></div>
       <div><dt>Applied At</dt><dd>${job.applied_at ? formatDateTime(job.applied_at) : job.applied_at_text || "-"}</dd></div>
+      <div><dt>Application Method</dt><dd>${job.application_method || "-"}</dd></div>
       <div><dt>Interest Score</dt><dd>${job.interest_score ?? "-"}</dd></div>
       <div><dt>Skip Reason</dt><dd>${job.skip_reason || "-"}</dd></div>
       <div><dt>Interest Reason</dt><dd>${job.interest_reason || "-"}</dd></div>
@@ -353,6 +354,26 @@ function clearRunFilter() {
   syncUrlForRun(null);
 }
 
+function renderSearchPasses(passes) {
+  if (!passes.length) {
+    return '<p class="muted">No search passes configured; the default work arrangement is used.</p>';
+  }
+  return passes
+    .map((pass, index) => {
+      const list = Array.isArray(pass.locations) ? pass.locations.filter(Boolean) : [];
+      const location = pass.location || (list.length ? list.join(", ") : "Worldwide");
+      const modes = [
+        pass.remote ? "Remote" : null,
+        pass.hybrid ? "Hybrid" : null,
+        pass.onsite ? "On-site" : null,
+      ]
+        .filter(Boolean)
+        .join(" + ") || "None";
+      return `<p class="muted">${index + 1}. ${location} — ${modes}</p>`;
+    })
+    .join("");
+}
+
 function buildSearchConfigForm(config) {
   const dateConfig = config.date || {};
   searchConfigForm.innerHTML = `
@@ -380,6 +401,10 @@ function buildSearchConfigForm(config) {
       <label class="checkbox"><input type="checkbox" name="date.week" ${dateConfig.week ? "checked" : ""}>Week</label>
       <label class="checkbox"><input type="checkbox" name="date.24_hours" ${dateConfig["24_hours"] ? "checked" : ""}>24 hours</label>
     </fieldset>
+    <fieldset>
+      <legend>Search Passes (read-only — edit config/search_config.yaml)</legend>
+      ${renderSearchPasses(config.search_passes || [])}
+    </fieldset>
   `;
 }
 
@@ -390,10 +415,15 @@ function renderBooleanGroup(prefix, values) {
 }
 
 function buildAppConfigForm(config) {
+  const labels = {
+    EASY_APPLY_ONLY_MODE: "Easy Apply only (turn off to include company sites)",
+    SAP_MM_AUTO_APPLY_MODE: "Auto-apply to SAP MM roles only",
+  };
   appConfigForm.innerHTML = Object.entries(config)
     .map(([key, value]) => {
       if (typeof value === "boolean") {
-        return `<label class="checkbox"><input type="checkbox" name="${key}" ${value ? "checked" : ""}>${key}</label>`;
+        const label = labels[key] || key;
+        return `<label class="checkbox"><input type="checkbox" name="${key}" ${value ? "checked" : ""}>${label}</label>`;
       }
       return `<label>${key}<input type="text" name="${key}" value="${value ?? ""}"></label>`;
     })

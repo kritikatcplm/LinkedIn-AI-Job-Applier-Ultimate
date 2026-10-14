@@ -87,26 +87,29 @@ def applier(mock_page, mock_gpt_answerer, mock_resume_anonymizer, tmp_path):
     cover_dir.mkdir()
     answers_file = tmp_path / "answers.yaml"
 
-    with patch(
-        "src.job_manager.linkedin.easy_applier_linkedin.get_ready_made_resume", return_value=None
+    with (
+        patch(
+            "src.job_manager.linkedin.easy_applier_linkedin.get_ready_made_resume",
+            return_value=None,
+        ),
+        patch(
+            "src.job_manager.linkedin.easy_applier_linkedin.get_ready_made_photo",
+            return_value=None,
+        ),
+        patch("src.job_manager.easy_applier.get_ready_made_resume_for_job", return_value=None),
+        patch("src.job_manager.linkedin.easy_applier_linkedin.load_yaml_file", return_value=None),
     ):
-        with patch(
-            "src.job_manager.linkedin.easy_applier_linkedin.get_ready_made_photo", return_value=None
-        ):
-            with patch(
-                "src.job_manager.linkedin.easy_applier_linkedin.load_yaml_file", return_value=None
-            ):
-                inst = LinkedInEasyApplier(
-                    page=mock_page,
-                    gpt_answerer=mock_gpt_answerer,
-                    resume_anonymizer=mock_resume_anonymizer,
-                    resume_generator_manager=AsyncMock(),
-                    pause_checker=None,
-                    answers_file=answers_file,
-                    resume_dir=resume_dir,
-                    cover_letter_dir=cover_dir,
-                    test_mode=False,
-                )
+        inst = LinkedInEasyApplier(
+            page=mock_page,
+            gpt_answerer=mock_gpt_answerer,
+            resume_anonymizer=mock_resume_anonymizer,
+            resume_generator_manager=AsyncMock(),
+            pause_checker=None,
+            answers_file=answers_file,
+            resume_dir=resume_dir,
+            cover_letter_dir=cover_dir,
+            test_mode=False,
+        )
     inst.current_job = Job(job_title="Engineer", company_name="TestCorp", url=LINKEDIN_JOB_URL)
     return inst
 
@@ -549,6 +552,53 @@ class TestUploadFields:
             await applier._handle_upload_fields(element, job, set())
 
         expected_path = os.path.abspath(str(ready_made_resume.resolve()))
+        upload_element.set_input_files.assert_called_once_with(expected_path)
+        assert applier.submitted_resume_path == expected_path
+
+    @pytest.mark.asyncio
+    async def test_uploads_language_matched_resume_when_generator_unavailable(
+        self, applier, tmp_path
+    ):
+        language_resume = tmp_path / "CV_DE.pdf"
+        language_resume.write_bytes(b"german")
+        applier.ready_made_resume_path = None
+        applier.resume_generator_manager = None
+
+        upload_element = AsyncMock()
+        upload_element.get_attribute = AsyncMock(return_value="resume-upload")
+        upload_element.evaluate = AsyncMock()
+        upload_element.set_input_files = AsyncMock()
+
+        parent = AsyncMock()
+        parent.text_content = AsyncMock(return_value="Resume")
+        upload_element.locator = MagicMock(return_value=MagicMock(first=parent))
+
+        element = MagicMock()
+        upload_locator = MagicMock()
+        upload_locator.all = AsyncMock(return_value=[upload_element])
+        element.locator = MagicMock(return_value=upload_locator)
+
+        job = Job(
+            job_title="Engineer",
+            company_name="Tech",
+            job_description="We are looking for an engineer to join our team.",
+        )
+
+        with (
+            patch(
+                "src.job_manager.linkedin.easy_applier_linkedin.find_element_safely",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "src.job_manager.easy_applier.get_ready_made_resume_for_job",
+                return_value=language_resume,
+            ) as mock_resolve,
+        ):
+            await applier._handle_upload_fields(element, job, set())
+
+        mock_resolve.assert_called_with(job.job_description)
+        expected_path = os.path.abspath(str(language_resume.resolve()))
         upload_element.set_input_files.assert_called_once_with(expected_path)
         assert applier.submitted_resume_path == expected_path
 

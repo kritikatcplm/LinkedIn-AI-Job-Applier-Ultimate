@@ -17,6 +17,7 @@ def easy_applier():
 
     with (
         patch(f"{MODULE}.get_ready_made_resume", return_value=None),
+        patch("src.job_manager.easy_applier.get_ready_made_resume_for_job", return_value=None),
         patch.object(LinkedInEasyApplier, "_load_questions", return_value=[]),
     ):
         return LinkedInEasyApplier(
